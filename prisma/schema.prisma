@@ -1,60 +1,70 @@
-generator client {
-  provider = "prisma-client-js"
-  output   = "../generated/prisma"
-}
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-model clicks {
-  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  share_link_id String      @db.Uuid
-  clicked_at    DateTime?   @default(now()) @db.Timestamp(6)
-  share_links   share_links @relation(fields: [share_link_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-}
-
-model coupons {
-  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id     String        @db.VarChar(255)
-  shop_id     String        @db.Uuid
-  expires_at  DateTime      @db.Timestamp(6)
-  shops       shops         @relation(fields: [shop_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users       users         @relation(fields: [user_id], references: [email], onDelete: NoAction, onUpdate: NoAction)
-  redemptions redemptions[]
-  share_links share_links[]
-}
-
-model redemptions {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  coupon_id   String    @db.Uuid
-  redeemed_at DateTime? @default(now()) @db.Timestamp(6)
-  coupons     coupons   @relation(fields: [coupon_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-}
-
-model share_links {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  coupon_id String   @db.Uuid
-  link      String   @db.VarChar(255)
-  clicks    clicks[]
-  coupons   coupons  @relation(fields: [coupon_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-}
-
-model shops {
-  id       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name     String    @db.VarChar(255)
-  owner_id String    @db.VarChar(255)
-  coupons  coupons[]
-  users    users     @relation(fields: [owner_id], references: [email], onDelete: NoAction, onUpdate: NoAction)
+generator client {
+  provider = "prisma-client-js"
 }
 
 model users {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email         String    @unique @db.VarChar(255)
-  password_hash String    @db.VarChar(255)
-  role          String    @db.VarChar(50)
-  created_at    DateTime? @default(now()) @db.Timestamp(6)
+  id            String   @id @default(uuid())
+  role          String   @default("customer")
+  email         String   @unique
+  password_hash String
   coupons       coupons[]
-  shops         shops[]
+  redemptions   redemptions[]
+  created_at    DateTime @default(now())
+}
+
+model shops {
+  id        String   @id @default(uuid())
+  name      String
+  owner_id  String   @unique
+  coupons   coupons[]
+  redemptions redemptions[]
+  created_at DateTime @default(now())
+}
+
+model coupons {
+  id         String   @id @default(uuid())
+  user_id    String
+  shop_id    String
+  status     String   @default("pending")
+  threshold  Int      @default(3)
+  expires_at DateTime
+  created_at DateTime @default(now())
+  share_links share_links[]
+  redemptions redemptions[]
+  users      users    @relation(fields: [user_id], references: [id])
+  shops      shops    @relation(fields: [shop_id], references: [id])
+}
+
+model share_links {
+  id        String   @id @default(uuid())
+  coupon_id String
+  link_url  String   @unique
+  generated_at DateTime @default(now())
+  clicks    clicks[]
+  coupons   coupons  @relation(fields: [coupon_id], references: [id])
+}
+
+model clicks {
+  id            String   @id @default(uuid())
+  share_link_id String
+  clicker_ip    String
+  redeemed      Boolean  @default(false)
+  clicked_at    DateTime @default(now())
+  share_links   share_links @relation(fields: [share_link_id], references: [id])
+}
+
+model redemptions {
+  id            String   @id @default(uuid())
+  coupon_id     String
+  redeemer_id   String
+  confirmed_at  DateTime
+  shopkeeper_id String
+  coupons       coupons  @relation(fields: [coupon_id], references: [id])
+  users         users    @relation(fields: [redeemer_id], references: [id])
+  shops         shops    @relation(fields: [shopkeeper_id], references: [id])
 }

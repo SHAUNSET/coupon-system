@@ -1,14 +1,15 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "commonjs",
-    "outDir": "./dist",
-    "rootDir": "./",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "target": "ES6",              // Changed from ES2020 to ES6 for broader Node.js compatibility
+    "module": "commonjs",         // Kept as is, suits Node.js and Express
+    "outDir": "./dist",           // Kept for compiled JS output
+    "rootDir": "./",              // Kept, assumes source files are in the root
+    "strict": true,               // Kept for type safety
+    "esModuleInterop": true,      // Kept for better module interop
+    "skipLibCheck": true,         // Kept to speed up compilation by skipping library checks
+    "forceConsistentCasingInFileNames": true, // Kept for consistent file naming
+    "resolveJsonModule": true     // Added to handle JSON imports if needed (e.g., config files)
   },
-  "include": ["**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": ["index.ts"],       // Changed from "**/*.ts" to specific file for now, to avoid unnecessary checks
+  "exclude": ["node_modules", "dist"] // Added "dist" to exclude compiled output
 }

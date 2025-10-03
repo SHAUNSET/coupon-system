@@ -1,6 +1,38 @@
 import express, { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import cors from 'cors';
+import { v4 as uuidv4 } from 'uuid';
+
+// Request body interfaces
+interface UserRequestBody {
+  email: string;
+  role: string;
+  password_hash: string;
+}
+
+interface CouponRequestBody {
+  user_id: string;
+  shop_id: string;
+  expires_at: string;
+  threshold?: number;
+}
+
+interface ShareLinkRequestBody {
+  coupon_id: string;
+  user_id?: string;
+}
+
+interface ClickRequestBody {
+  share_link_id: string;
+  clicker_id: string;
+  clicker_ip?: string; // Added to match schema's optional clicker_ip
+}
+
+interface RedeemRequestBody {
+  coupon_id: string;
+  redeemer_id: string;
+  shopkeeper_id: string;
+}
 
 const app = express();
 const prisma = new PrismaClient();
@@ -9,12 +41,39 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
+// Validate UUID format
+const isValidUUID = (id: string): boolean => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id);
+
+// Create a new user
+app.post('/api/users', async (req: Request<{}, {}, UserRequestBody>, res: Response) => {
+  try {
+    const { email, role, password_hash } = req.body;
+    if (!email || !role || !password_hash) {
+      return res.status(400).json({ error: 'Missing required fields: email, role, password_hash' });
+    }
+    const existingUser = await prisma.users.findUnique({ where: { email } });
+    if (existingUser) {
+      return res.status(400).json({ error: 'User with this email already exists' });
+    }
+    const user = await prisma.users.create({
+      data: { id: uuidv4(), email, role, password_hash, created_at: new Date() },
+    });
+    console.log(`Created user: ${JSON.stringify(user)}`);
+    res.status(201).json(user);
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
 // Get all users
 app.get('/api/users', async (req: Request, res: Response) => {
   try {
     const users = await prisma.users.findMany();
+    console.log(`Fetched ${users.length} users`);
     res.json(users);
   } catch (error) {
+    console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
@@ -23,115 +82,202 @@ app.get('/api/users', async (req: Request, res: Response) => {
 app.get('/api/coupons', async (req: Request, res: Response) => {
   try {
     const coupons = await prisma.coupons.findMany();
+    console.log(`Fetched ${coupons.length} coupons`);
     res.json(coupons);
   } catch (error) {
+    console.error('Error fetching coupons:', error);
     res.status(500).json({ error: 'Failed to fetch coupons' });
   }
 });
 
-// Create a new coupon (basic, for testing)
-app.post('/api/coupons', async (req: Request, res: Response) => {
+// Create a new coupon
+app.post('/api/coupons', async (req: Request<{}, {}, CouponRequestBody>, res: Response) => {
   try {
-    const { user_id, shop_id, expires_at } = req.body;
+    const { user_id, shop_id, expires_at, threshold } = req.body;
+    if (!user_id || !shop_id || !expires_at) {
+      return res.status(400).json({ error: 'Missing required fields: user_id, shop_id, expires_at' });
+    }
+    if (!isValidUUID(user_id) || !isValidUUID(shop_id)) {
+      return res.status(400).json({ error: 'Invalid UUID format for user_id or shop_id' });
+    }
+    const userExists = await prisma.users.findUnique({ where: { id: user_id } });
+    const shopExists = await prisma.shops.findUnique({ where: { id: shop_id } });
+    if (!userExists) return res.status(404).json({ error: `User with ID ${user_id} not found` });
+    if (!shopExists) return res.status(404).json({ error: `Shop with ID ${shop_id} not found` });
+    const effectiveThreshold = threshold !== undefined ? parseInt(threshold.toString(), 10) : 3;
     const coupon = await prisma.coupons.create({
       data: { 
         user_id, 
         shop_id, 
         expires_at: new Date(expires_at), 
         status: 'pending', 
-        users: { connect: { id: user_id } }, 
-        shops: { connect: { id: shop_id } }
+        threshold: effectiveThreshold,
+        created_at: new Date()
       },
     });
-    res.json(coupon);
+    console.log(`Created coupon: ${JSON.stringify(coupon)}`);
+    res.status(201).json(coupon);
   } catch (error) {
+    console.error('Error creating coupon:', error);
     res.status(500).json({ error: 'Failed to create coupon' });
   }
 });
 
 // Create share links for a coupon
-app.post('/api/share-links', async (req: Request, res: Response) => {
+app.post('/api/share-links', async (req: Request<{}, {}, ShareLinkRequestBody>, res: Response) => {
   try {
-    const { coupon_id } = req.body;
+    const { coupon_id, user_id } = req.body;
+    if (!coupon_id) {
+      return res.status(400).json({ error: 'Missing coupon_id' });
+    }
+    if (!isValidUUID(coupon_id)) {
+      return res.status(400).json({ error: 'Invalid UUID format for coupon_id' });
+    }
     const coupon = await prisma.coupons.findUnique({ where: { id: coupon_id } });
     if (!coupon) {
-      return res.status(404).json({ error: 'Coupon not found' });
+      return res.status(404).json({ error: `Coupon with ID ${coupon_id} not found` });
     }
-    const link = `http://yourdomain.com/redeem/${coupon_id}/${Math.random().toString(36).substr(2, 9)}`;
+    const link = `http://yourdomain.com/redeem/${coupon_id}/${uuidv4()}`;
     const shareLink = await prisma.share_links.create({
-      data: { coupon_id, link_url: link },
+      data: { coupon_id, link_url: link, user_id: user_id || null, generated_at: new Date() },
     });
-    res.json(shareLink);
+    console.log(`Created share link: ${JSON.stringify(shareLink)}`);
+    res.status(201).json(shareLink);
   } catch (error) {
+    console.error('Error creating share link:', error);
     res.status(500).json({ error: 'Failed to create share link' });
   }
 });
 
-// Record a click on a share link and check threshold
-app.post('/api/clicks', async (req: Request, res: Response) => {
+// Record a click and update coupon status
+app.post('/api/clicks', async (req: Request<{}, {}, ClickRequestBody>, res: Response) => {
   try {
-    const { share_link_id } = req.body;
-    console.log(`Received request for share_link_id: ${share_link_id}`);
+    const { share_link_id, clicker_id, clicker_ip } = req.body;
+    if (!share_link_id || !clicker_id) {
+      return res.status(400).json({ error: 'Missing required fields: share_link_id, clicker_id' });
+    }
+    if (!isValidUUID(share_link_id) || !isValidUUID(clicker_id)) {
+      return res.status(400).json({ error: 'Invalid UUID format for share_link_id or clicker_id' });
+    }
     const shareLink = await prisma.share_links.findUnique({ where: { id: share_link_id } });
     if (!shareLink) {
-      return res.status(404).json({ error: 'Share link not found' });
+      return res.status(404).json({ error: `Share link with ID ${share_link_id} not found` });
     }
-    const clicker_ip = req.ip || '::1';
+    const clickerExists = await prisma.users.findUnique({ where: { id: clicker_id } });
+    if (!clickerExists) {
+      return res.status(404).json({ error: `User with ID ${clicker_id} not found` });
+    }
     const click = await prisma.clicks.create({
-      data: { share_link_id, clicker_ip, redeemed: false },
+      data: { 
+        share_link_id, 
+        clicker_id, 
+        clicker_ip: clicker_ip || null, // Handles optional clicker_ip
+        redeemed: false, 
+        clicked_at: new Date() 
+      },
     });
-    console.log(`Click created: ${JSON.stringify(click)}`);
+    console.log(`Click recorded: ${JSON.stringify(click)}`);
 
     const couponId = shareLink.coupon_id;
     const coupon = await prisma.coupons.findUnique({ where: { id: couponId } });
     if (!coupon) {
-      return res.status(404).json({ error: 'Coupon not found' });
+      return res.status(404).json({ error: `Coupon with ID ${couponId} not found` });
     }
-    const clickCount = await prisma.clicks.count({
-      where: { share_link_id: share_link_id },
+    const totalClicks = await prisma.clicks.count({
+      where: {
+        share_link_id: { in: (await prisma.share_links.findMany({ where: { coupon_id: couponId } })).map(sl => sl.id) },
+      },
     });
-    console.log(`Count query result: ${clickCount} clicks for share_link_id ${share_link_id}`);
-    console.log(`Coupon details: ID ${couponId}, Threshold ${coupon.threshold}, Current Status ${coupon.status}`);
-    if (clickCount >= coupon.threshold) {
-      try {
-        const updateResult = await prisma.coupons.update({
-          where: { id: couponId },
-          data: { status: 'active' },
-        });
-        console.log(`Update attempt succeeded: ${JSON.stringify(updateResult)}`);
-      } catch (updateError) {
-        console.log(`Update failed: ${updateError instanceof Error ? updateError.message : 'Unknown error'}`);
-      }
-    } else {
-      console.log(`No update: Click count ${clickCount} below threshold ${coupon.threshold}`);
+    console.log(`Total clicks for coupon ${couponId}: ${totalClicks}, Threshold: ${coupon.threshold}`);
+    if (totalClicks >= coupon.threshold && coupon.status !== 'active') {
+      const updatedCoupon = await prisma.coupons.update({
+        where: { id: couponId },
+        data: { status: 'active' },
+      });
+      console.log(`Coupon ${couponId} status updated to active: ${JSON.stringify(updatedCoupon)}`);
+    } else if (totalClicks < coupon.threshold) {
+      console.log(`Click count ${totalClicks} below threshold ${coupon.threshold}, no update`);
     }
 
-    res.json(click);
+    res.status(201).json(click);
   } catch (error) {
-    console.log(`Overall error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Error in clicks endpoint:', error);
     res.status(500).json({ error: 'Failed to record click' });
   }
 });
 
-// Test endpoint to manually update status
-app.post('/api/test-update-status', async (req: Request, res: Response) => {
+// Redeem a coupon
+app.post('/api/redeem', async (req: Request<{}, {}, RedeemRequestBody>, res: Response) => {
   try {
-    const { coupon_id } = req.body;
+    const { coupon_id, redeemer_id, shopkeeper_id } = req.body;
+    if (!coupon_id || !redeemer_id || !shopkeeper_id) {
+      return res.status(400).json({ error: 'Missing required fields: coupon_id, redeemer_id, shopkeeper_id' });
+    }
+    if (!isValidUUID(coupon_id) || !isValidUUID(redeemer_id) || !isValidUUID(shopkeeper_id)) {
+      return res.status(400).json({ error: 'Invalid UUID format for one or more IDs' });
+    }
     const coupon = await prisma.coupons.findUnique({ where: { id: coupon_id } });
     if (!coupon) {
-      return res.status(404).json({ error: 'Coupon not found' });
+      return res.status(404).json({ error: `Coupon with ID ${coupon_id} not found` });
+    }
+    if (coupon.status !== 'active') {
+      return res.status(400).json({ error: `Coupon ${coupon_id} is not active, current status: ${coupon.status}` });
+    }
+    const redeemer = await prisma.users.findUnique({ where: { id: redeemer_id } });
+    const shopkeeper = await prisma.users.findUnique({ where: { id: shopkeeper_id } });
+    if (!redeemer) return res.status(404).json({ error: `Redeemer with ID ${redeemer_id} not found` });
+    if (!shopkeeper) return res.status(404).json({ error: `Shopkeeper with ID ${shopkeeper_id} not found` });
+
+    const redemption = await prisma.redemptions.create({
+      data: {
+        id: uuidv4(),
+        coupon_id,
+        redeemer_id,
+        shopkeeper_id,
+        confirmed_at: new Date(),
+      },
+    });
+    console.log(`Redemption created for coupon ${coupon_id}: ${JSON.stringify(redemption)}`);
+    res.status(201).json(redemption);
+  } catch (error) {
+    console.error('Error in redeem endpoint:', error);
+    res.status(500).json({ error: 'Failed to redeem coupon' });
+  }
+});
+
+// Test endpoint to manually update status
+app.post('/api/test-update-status', async (req: Request<{}, {}, { coupon_id: string }>, res: Response) => {
+  try {
+    const { coupon_id } = req.body;
+    if (!coupon_id) {
+      return res.status(400).json({ error: 'Missing coupon_id' });
+    }
+    if (!isValidUUID(coupon_id)) {
+      return res.status(400).json({ error: 'Invalid UUID format for coupon_id' });
+    }
+    const coupon = await prisma.coupons.findUnique({ where: { id: coupon_id } });
+    if (!coupon) {
+      return res.status(404).json({ error: `Coupon with ID ${coupon_id} not found` });
     }
     const updateResult = await prisma.coupons.update({
       where: { id: coupon_id },
       data: { status: 'active' },
     });
+    console.log(`Manually updated coupon ${coupon_id} to active: ${JSON.stringify(updateResult)}`);
     res.json(updateResult);
   } catch (error) {
+    console.error('Error in test-update-status:', error);
     res.status(500).json({ error: 'Failed to update status' });
   }
 });
 
+// Health check endpoint
+app.get('/api/health', (req: Request, res: Response) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
 // Start server
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT} at ${new Date().toISOString()}`);
+  console.log('MVP endpoints available: /api/users, /api/coupons, /api/share-links, /api/clicks, /api/redeem, /api/test-update-status');
 });

@@ -7,64 +7,91 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// User model representing customers and shopkeepers
 model users {
-  id            String   @id @default(uuid())
-  role          String   @default("customer")
-  email         String   @unique
+  id            String       @id @default(uuid()) @db.Uuid
+  role          String       @default("customer")
+  email         String       @unique
   password_hash String
-  coupons       coupons[]
-  redemptions   redemptions[]
-  created_at    DateTime @default(now())
+  created_at    DateTime     @default(now())
+  coupons       coupons[]    @relation("UserCoupons")
+  share_links   share_links[] @relation("UserShareLinks")
+  clicks        clicks[]     @relation("UserClicks")
+  redemptions_as_redeemer redemptions[] @relation("Redeemer")
+  redemptions_as_shopkeeper redemptions[] @relation("Shopkeeper")
+
+  @@map("users")
 }
 
+// Shop model for businesses issuing coupons
 model shops {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @db.Uuid
   name      String
-  owner_id  String   @unique
-  coupons   coupons[]
-  redemptions redemptions[]
+  owner_id  String   @db.Uuid @unique
   created_at DateTime @default(now())
+  coupons   coupons[] @relation("ShopCoupons")
+  redemptions redemptions[] @relation("ShopRedemptions")
+
+  @@map("shops")
 }
 
+// Coupon model for discount offers
 model coupons {
-  id         String   @id @default(uuid())
-  user_id    String
-  shop_id    String
-  status     String
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  shop_id    String   @db.Uuid
+  status     String   @default("pending")
   threshold  Int      @default(3)
   expires_at DateTime
   created_at DateTime @default(now())
-  share_links share_links[]
-  redemptions redemptions[]
-  users      users    @relation(fields: [user_id], references: [id])
-  shops      shops    @relation(fields: [shop_id], references: [id])
+  share_links share_links[] @relation("CouponShareLinks")
+  redemptions redemptions[] @relation("CouponRedemptions")
+  users      users    @relation("UserCoupons", fields: [user_id], references: [id], onDelete: Cascade)
+  shops      shops    @relation("ShopCoupons", fields: [shop_id], references: [id], onDelete: Cascade)
+
+  @@map("coupons")
 }
 
+// Share link model for distributing coupons
 model share_links {
-  id        String   @id @default(uuid())
-  coupon_id String
-  link_url  String   @unique
+  id          String   @id @default(uuid()) @db.Uuid
+  coupon_id   String   @db.Uuid
+  link_url    String   @unique
+  user_id     String?  @db.Uuid
   generated_at DateTime @default(now())
-  clicks    clicks[]
-  coupons   coupons  @relation(fields: [coupon_id], references: [id])
+  clicks      clicks[] @relation("ShareLinkClicks")
+  coupons     coupons  @relation("CouponShareLinks", fields: [coupon_id], references: [id], onDelete: Cascade)
+  users       users?   @relation("UserShareLinks", fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@map("share_links")
 }
 
+// Click model for tracking coupon interactions
 model clicks {
-  id            String   @id @default(uuid())
-  share_link_id String
-  clicker_ip    String
+  id            String   @id @default(uuid()) @db.Uuid
+  share_link_id String   @db.Uuid
+  clicker_id    String   @db.Uuid
+  clicker_ip    String?  @db.VarChar(45)
   redeemed      Boolean  @default(false)
   clicked_at    DateTime @default(now())
-  share_links   share_links @relation(fields: [share_link_id], references: [id])
+  share_links   share_links @relation("ShareLinkClicks", fields: [share_link_id], references: [id], onDelete: Cascade)
+  users         users?   @relation("UserClicks", fields: [clicker_id], references: [id], onDelete: SetNull)
+
+  @@map("clicks")
+  @@index([clicker_ip])
 }
 
+// Redemption model for coupon usage
 model redemptions {
-  id            String   @id @default(uuid())
-  coupon_id     String
-  redeemer_id   String
-  confirmed_at  DateTime
-  shopkeeper_id String
-  coupons       coupons  @relation(fields: [coupon_id], references: [id])
-  users         users    @relation(fields: [redeemer_id], references: [id])
-  shops         shops    @relation(fields: [shopkeeper_id], references: [id])
+  id            String   @id @default(uuid()) @db.Uuid
+  coupon_id     String   @db.Uuid
+  redeemer_id   String   @db.Uuid
+  shopkeeper_id String   @db.Uuid
+  confirmed_at  DateTime @default(now())
+  coupons       coupons  @relation("CouponRedemptions", fields: [coupon_id], references: [id], onDelete: Cascade)
+  users_redeemer users   @relation("Redeemer", fields: [redeemer_id], references: [id], onDelete: Cascade)
+  users_shopkeeper users @relation("Shopkeeper", fields: [shopkeeper_id], references: [id], onDelete: Cascade, map: "RedemptionsShopkeeperFkey")
+  shops         shops    @relation("ShopRedemptions", fields: [shopkeeper_id], references: [id], onDelete: Cascade) // Added opposite relation
+
+  @@map("redemptions")
 }

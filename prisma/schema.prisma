@@ -30,7 +30,7 @@ model coupons {
   id         String   @id @default(uuid())
   user_id    String
   shop_id    String
-  status     String   @default("pending")
+  status     String
   threshold  Int      @default(3)
   expires_at DateTime
   created_at DateTime @default(now())

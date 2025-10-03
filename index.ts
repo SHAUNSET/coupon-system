@@ -38,9 +38,9 @@ app.post('/api/coupons', async (req: Request, res: Response) => {
         user_id, 
         shop_id, 
         expires_at: new Date(expires_at), 
-        status: 'pending', // Added to satisfy the required field
-        users: { connect: { id: user_id } }, // Connect the user relation
-        shops: { connect: { id: shop_id } }  // Connect the shop relation
+        status: 'pending', 
+        users: { connect: { id: user_id } }, 
+        shops: { connect: { id: shop_id } }
       },
     });
     res.json(coupon);
@@ -71,14 +71,16 @@ app.post('/api/share-links', async (req: Request, res: Response) => {
 app.post('/api/clicks', async (req: Request, res: Response) => {
   try {
     const { share_link_id } = req.body;
+    console.log(`Received request for share_link_id: ${share_link_id}`);
     const shareLink = await prisma.share_links.findUnique({ where: { id: share_link_id } });
     if (!shareLink) {
       return res.status(404).json({ error: 'Share link not found' });
     }
-    const clicker_ip = req.ip || '::1'; // Using ::1 for IPv6 localhost
+    const clicker_ip = req.ip || '::1';
     const click = await prisma.clicks.create({
       data: { share_link_id, clicker_ip, redeemed: false },
     });
+    console.log(`Click created: ${JSON.stringify(click)}`);
 
     const couponId = shareLink.coupon_id;
     const coupon = await prisma.coupons.findUnique({ where: { id: couponId } });
@@ -88,23 +90,25 @@ app.post('/api/clicks', async (req: Request, res: Response) => {
     const clickCount = await prisma.clicks.count({
       where: { share_link_id: share_link_id },
     });
-    console.log(`Coupon ID: ${couponId}, Click Count: ${clickCount}, Threshold: ${coupon.threshold}`);
+    console.log(`Count query result: ${clickCount} clicks for share_link_id ${share_link_id}`);
+    console.log(`Coupon details: ID ${couponId}, Threshold ${coupon.threshold}, Current Status ${coupon.status}`);
     if (clickCount >= coupon.threshold) {
       try {
-        await prisma.coupons.update({
+        const updateResult = await prisma.coupons.update({
           where: { id: couponId },
           data: { status: 'active' },
         });
-        console.log(`Status updated to active for coupon ${couponId}`);
+        console.log(`Update attempt succeeded: ${JSON.stringify(updateResult)}`);
       } catch (updateError) {
-        console.log(`Update failed: ${updateError}`);
+        console.log(`Update failed: ${updateError instanceof Error ? updateError.message : 'Unknown error'}`);
       }
     } else {
-      console.log(`Click count ${clickCount} is below threshold ${coupon.threshold}`);
+      console.log(`No update: Click count ${clickCount} below threshold ${coupon.threshold}`);
     }
 
     res.json(click);
   } catch (error) {
+    console.log(`Overall error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     res.status(500).json({ error: 'Failed to record click' });
   }
 });

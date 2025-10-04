@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Coupon System MVP</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    button { margin: 5px; padding: 10px; }
+    #result { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Coupon System</h1>
+  <button onclick="createUser()">Create User</button>
+  <button onclick="createCoupon()">Create Coupon</button>
+  <button onclick="redeemCoupon()">Redeem Coupon</button>
+  <p id="result"></p>
+
+  <script>
+    // Function to validate UUID format
+    function isValidUUID(uuid) {
+      const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      return uuidRegex.test(uuid);
+    }
+
+    async function createUser() {
+      const response = await fetch('http://localhost:3000/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'customer1@example.com', role: 'customer', password_hash: 'hashedpass' })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        localStorage.setItem('userId', data.id);
+        console.log('User created:', data);
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      } else {
+        console.error('User creation failed:', data);
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      }
+    }
+
+    async function createCoupon() {
+      const userId = localStorage.getItem('userId');
+      if (!userId || !isValidUUID(userId)) {
+        console.error('Invalid or missing userId:', userId);
+        document.getElementById('result').innerText = 'Error: Invalid user ID. Create a user first!';
+        return;
+      }
+      const response = await fetch('http://localhost:3000/api/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId.toLowerCase(), // Ensure lowercase to match database
+          shop_id: 'a38b2a46-8487-42ac-85c6-e35e7b62e1e5'.toLowerCase(), // Ensure lowercase
+          expires_at: '2025-12-31T23:59:59Z'
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        localStorage.setItem('couponId', data.id);
+        console.log('Coupon created:', data);
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      } else {
+        console.error('Coupon creation failed:', data);
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      }
+    }
+
+    async function redeemCoupon() {
+      const userId = localStorage.getItem('userId');
+      const couponId = localStorage.getItem('couponId');
+      if (!userId || !couponId || !isValidUUID(userId) || !isValidUUID(couponId)) {
+        console.error('Invalid or missing IDs:', { userId, couponId });
+        document.getElementById('result').innerText = 'Error: Invalid user or coupon ID. Create them first!';
+        return;
+      }
+      console.log('Sending redeem request with:', { coupon_id: couponId.toLowerCase(), redeemer_id: userId.toLowerCase(), shopkeeper_id: 'c4815927-d88f-46ac-b3d8-5e4c1beaabcc'.toLowerCase() });
+      const response = await fetch('http://localhost:3000/api/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          coupon_id: couponId.toLowerCase(),
+          redeemer_id: userId.toLowerCase(),
+          shopkeeper_id: 'c4815927-d88f-46ac-b3d8-5e4c1beaabcc'.toLowerCase()
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        console.log('Redemption created:', data);
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      } else {
+        console.error('Redemption failed:', data);
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      }
+    }
+  </script>
+</body>
+</html>

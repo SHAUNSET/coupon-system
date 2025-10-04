@@ -30,7 +30,8 @@ model shops {
   owner_id  String   @db.Uuid @unique
   created_at DateTime @default(now())
   coupons   coupons[] @relation("ShopCoupons")
-  redemptions redemptions[] @relation("ShopRedemptions")
+  // Temporarily remove redemptions relation to avoid conflict
+  // redemptions redemptions[] @relation("ShopRedemptions")
 
   @@map("shops")
 }
@@ -91,7 +92,6 @@ model redemptions {
   coupons       coupons  @relation("CouponRedemptions", fields: [coupon_id], references: [id], onDelete: Cascade)
   users_redeemer users   @relation("Redeemer", fields: [redeemer_id], references: [id], onDelete: Cascade)
   users_shopkeeper users @relation("Shopkeeper", fields: [shopkeeper_id], references: [id], onDelete: Cascade, map: "RedemptionsShopkeeperFkey")
-  shops         shops    @relation("ShopRedemptions", fields: [shopkeeper_id], references: [id], onDelete: Cascade) // Added opposite relation
 
   @@map("redemptions")
 }

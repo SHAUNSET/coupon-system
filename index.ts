@@ -5,9 +5,21 @@ import { v4 as uuidv4 } from 'uuid';
 
 // Request body interfaces
 interface UserRequestBody {
+  name?: string;
   email: string;
+  phone_number?: string;
   role: string;
   password_hash: string;
+}
+
+interface ShopRequestBody {
+  name: string;
+  owner_id: string;
+}
+
+interface LoginRequestBody {
+  email: string;
+  shopkeeper_id: string;
 }
 
 interface CouponRequestBody {
@@ -25,7 +37,7 @@ interface ShareLinkRequestBody {
 interface ClickRequestBody {
   share_link_id: string;
   clicker_id: string;
-  clicker_ip?: string; // Added to match schema's optional clicker_ip
+  clicker_ip?: string;
 }
 
 interface RedeemRequestBody {
@@ -44,10 +56,35 @@ app.use(cors());
 // Validate UUID format
 const isValidUUID = (id: string): boolean => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id);
 
+// Create a new shop
+app.post('/api/shops', async (req: Request<{}, {}, ShopRequestBody>, res: Response) => {
+  try {
+    const { name, owner_id } = req.body;
+    if (!name || !owner_id) {
+      return res.status(400).json({ error: 'Missing required fields: name, owner_id' });
+    }
+    if (!isValidUUID(owner_id)) {
+      return res.status(400).json({ error: 'Invalid UUID format for owner_id' });
+    }
+    const existingShop = await prisma.shops.findUnique({ where: { owner_id } });
+    if (existingShop) {
+      return res.status(400).json({ error: 'Shop with this owner_id already exists' });
+    }
+    const shop = await prisma.shops.create({
+      data: { id: uuidv4(), name, owner_id, created_at: new Date() },
+    });
+    console.log(`Created shop: ${JSON.stringify(shop)}`);
+    res.status(201).json(shop);
+  } catch (error) {
+    console.error('Error creating shop:', error);
+    res.status(500).json({ error: 'Failed to create shop' });
+  }
+});
+
 // Create a new user
 app.post('/api/users', async (req: Request<{}, {}, UserRequestBody>, res: Response) => {
   try {
-    const { email, role, password_hash } = req.body;
+    const { name, email, phone_number, role, password_hash } = req.body;
     if (!email || !role || !password_hash) {
       return res.status(400).json({ error: 'Missing required fields: email, role, password_hash' });
     }
@@ -56,13 +93,35 @@ app.post('/api/users', async (req: Request<{}, {}, UserRequestBody>, res: Respon
       return res.status(400).json({ error: 'User with this email already exists' });
     }
     const user = await prisma.users.create({
-      data: { id: uuidv4(), email, role, password_hash, created_at: new Date() },
+      data: { id: uuidv4(), name, email, phone_number, role, password_hash, created_at: new Date() },
     });
     console.log(`Created user: ${JSON.stringify(user)}`);
     res.status(201).json(user);
   } catch (error) {
     console.error('Error creating user:', error);
     res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// Login endpoint for shopkeepers
+app.post('/api/users/login', async (req: Request<{}, {}, LoginRequestBody>, res: Response) => {
+  try {
+    const { email, shopkeeper_id } = req.body;
+    if (!email || !shopkeeper_id) {
+      return res.status(400).json({ error: 'Missing required fields: email, shopkeeper_id' });
+    }
+    if (!isValidUUID(shopkeeper_id)) {
+      return res.status(400).json({ error: 'Invalid UUID format for shopkeeper_id' });
+    }
+    const user = await prisma.users.findUnique({ where: { email } });
+    if (user && user.role === 'shopkeeper' && user.id.toLowerCase() === shopkeeper_id.toLowerCase()) {
+      res.json(user);
+    } else {
+      res.status(401).json({ error: 'Invalid credentials or not a shopkeeper!' });
+    }
+  } catch (error) {
+    console.error('Error logging in:', error);
+    res.status(500).json({ error: 'Server error during login' });
   }
 });
 
@@ -78,15 +137,15 @@ app.get('/api/users', async (req: Request, res: Response) => {
   }
 });
 
-// Get all coupons
-app.get('/api/coupons', async (req: Request, res: Response) => {
+// Get all shops
+app.get('/api/shops', async (req: Request, res: Response) => {
   try {
-    const coupons = await prisma.coupons.findMany();
-    console.log(`Fetched ${coupons.length} coupons`);
-    res.json(coupons);
+    const shops = await prisma.shops.findMany();
+    console.log(`Fetched ${shops.length} shops`);
+    res.json(shops);
   } catch (error) {
-    console.error('Error fetching coupons:', error);
-    res.status(500).json({ error: 'Failed to fetch coupons' });
+    console.error('Error fetching shops:', error);
+    res.status(500).json({ error: 'Failed to fetch shops' });
   }
 });
 
@@ -106,11 +165,11 @@ app.post('/api/coupons', async (req: Request<{}, {}, CouponRequestBody>, res: Re
     if (!shopExists) return res.status(404).json({ error: `Shop with ID ${shop_id} not found` });
     const effectiveThreshold = threshold !== undefined ? parseInt(threshold.toString(), 10) : 3;
     const coupon = await prisma.coupons.create({
-      data: { 
-        user_id, 
-        shop_id, 
-        expires_at: new Date(expires_at), 
-        status: 'pending', 
+      data: {
+        user_id,
+        shop_id,
+        expires_at: new Date(expires_at),
+        status: 'pending',
         threshold: effectiveThreshold,
         created_at: new Date()
       },
@@ -168,12 +227,12 @@ app.post('/api/clicks', async (req: Request<{}, {}, ClickRequestBody>, res: Resp
       return res.status(404).json({ error: `User with ID ${clicker_id} not found` });
     }
     const click = await prisma.clicks.create({
-      data: { 
-        share_link_id, 
-        clicker_id, 
-        clicker_ip: clicker_ip || null, // Handles optional clicker_ip
-        redeemed: false, 
-        clicked_at: new Date() 
+      data: {
+        share_link_id,
+        clicker_id,
+        clicker_ip: clicker_ip || null,
+        redeemed: false,
+        clicked_at: new Date()
       },
     });
     console.log(`Click recorded: ${JSON.stringify(click)}`);
@@ -190,13 +249,11 @@ app.post('/api/clicks', async (req: Request<{}, {}, ClickRequestBody>, res: Resp
     });
     console.log(`Total clicks for coupon ${couponId}: ${totalClicks}, Threshold: ${coupon.threshold}`);
     if (totalClicks >= coupon.threshold && coupon.status !== 'active') {
-      const updatedCoupon = await prisma.coupons.update({
+      await prisma.coupons.update({
         where: { id: couponId },
         data: { status: 'active' },
       });
-      console.log(`Coupon ${couponId} status updated to active: ${JSON.stringify(updatedCoupon)}`);
-    } else if (totalClicks < coupon.threshold) {
-      console.log(`Click count ${totalClicks} below threshold ${coupon.threshold}, no update`);
+      console.log(`Coupon ${couponId} status updated to active`);
     }
 
     res.status(201).json(click);
@@ -245,6 +302,36 @@ app.post('/api/redeem', async (req: Request<{}, {}, RedeemRequestBody>, res: Res
   }
 });
 
+// Get redemptions for a shopkeeper with customer details
+app.get('/api/redeem', async (req: Request, res: Response) => {
+  try {
+    const { shopkeeper_id } = req.query;
+    if (!shopkeeper_id || !isValidUUID(shopkeeper_id.toString())) {
+      return res.status(400).json({ error: 'Invalid or missing shopkeeper_id' });
+    }
+    const redemptions = await prisma.redemptions.findMany({
+      where: { shopkeeper_id: shopkeeper_id.toString().toLowerCase() },
+      include: {
+        users_redeemer: true,
+      },
+    });
+    console.log(`Fetched ${redemptions.length} redemptions for shopkeeper ${shopkeeper_id}`);
+    const formattedRedemptions = redemptions.map(r => ({
+      id: r.id,
+      coupon_id: r.coupon_id,
+      redeemer_id: r.redeemer_id,
+      shopkeeper_id: r.shopkeeper_id,
+      confirmed_at: r.confirmed_at,
+      redeemer_name: r.users_redeemer.name,
+      redeemer_phone: r.users_redeemer.phone_number,
+    }));
+    res.json(formattedRedemptions);
+  } catch (error) {
+    console.error('Error fetching redemptions:', error);
+    res.status(500).json({ error: 'Failed to fetch redemptions' });
+  }
+});
+
 // Test endpoint to manually update status
 app.post('/api/test-update-status', async (req: Request<{}, {}, { coupon_id: string }>, res: Response) => {
   try {
@@ -279,5 +366,5 @@ app.get('/api/health', (req: Request, res: Response) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT} at ${new Date().toISOString()}`);
-  console.log('MVP endpoints available: /api/users, /api/coupons, /api/share-links, /api/clicks, /api/redeem, /api/test-update-status');
+  console.log('MVP endpoints available: /api/users, /api/users/login, /api/shops, /api/coupons, /api/share-links, /api/clicks, /api/redeem, /api/test-update-status');
 });

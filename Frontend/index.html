@@ -2,95 +2,281 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Coupon System MVP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coupon System</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    button { margin: 5px; padding: 10px; }
-    #result { margin-top: 10px; }
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f0f0f0; text-align: center; }
+    h1 { color: #333; }
+    .selection-container, .login-container, .button-container { display: flex; flex-wrap: wrap; justify-content: center; }
+    input, button { margin: 5px; padding: 10px 20px; font-size: 16px; border-radius: 5px; }
+    input { width: 200px; }
+    button { background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+    button:hover { background-color: #45a049; }
+    #result { margin-top: 20px; padding: 10px; background-color: #fff; border: 1px solid #ccc; border-radius: 5px; text-align: left; word-wrap: break-word; max-width: 90%; margin-left: auto; margin-right: auto; }
+    .section { display: none; }
+    @media (max-width: 600px) { input, button { width: 100%; margin: 5px 0; } #result { font-size: 14px; } }
   </style>
 </head>
 <body>
   <h1>Coupon System</h1>
-  <button onclick="createUser()">Create User</button>
-  <button onclick="createCoupon()">Create Coupon</button>
-  <button onclick="redeemCoupon()">Redeem Coupon</button>
+  <div id="selectionSection" class="selection-container">
+    <button onclick="showSection('shopkeeper')">Shopkeeper</button>
+    <button onclick="showSection('customer')">Customer</button>
+  </div>
+  
+  <!-- Shopkeeper Login and Dashboard -->
+  <div id="shopkeeperSection" class="section">
+    <div id="shopkeeperLogin" class="login-container">
+      <input id="shopkeeperName" placeholder="Name" required>
+      <input id="shopkeeperEmail" type="email" placeholder="Email" required>
+      <input id="shopkeeperId" placeholder="Shopkeeper ID (e.g., c4815927-d88f-46ac-b3d8-5e4c1beaabcc)" required>
+      <input id="shopkeeperPhone" placeholder="Phone Number" required>
+      <button onclick="shopkeeperCreateOrLogin()">Create/Login</button>
+    </div>
+    <div id="shopkeeperDashboard" class="button-container" style="display: none;">
+      <button onclick="createCoupon('shopkeeper')">Create Coupon</button>
+      <button onclick="createShareLink('shopkeeper')">Generate Share Link</button>
+      <button onclick="addClicks('shopkeeper')">Simulate 3 Clicks</button>
+      <button onclick="viewRedemptions('shopkeeper')">View Redemptions</button>
+      <button onclick="autoRedeem('shopkeeper')">Auto Redeem</button>
+    </div>
+  </div>
+
+  <!-- Customer Login and Dashboard -->
+  <div id="customerSection" class="section">
+    <div id="customerLogin" class="login-container">
+      <input id="customerName" placeholder="Your Name" required>
+      <input id="customerEmail" type="email" placeholder="Your Email" required>
+      <input id="customerPhone" placeholder="Phone Number" required>
+      <input id="customerShopkeeperId" placeholder="Shopkeeper ID" required>
+      <button onclick="customerCreateOrLogin()">Create/Login</button>
+    </div>
+    <div id="customerDashboard" class="button-container" style="display: none;">
+      <button onclick="createCoupon('customer')">Create Coupon</button>
+      <button onclick="viewShareLink('customer')">View Share Link</button>
+    </div>
+  </div>
+
   <p id="result"></p>
 
   <script>
-    // Function to validate UUID format
     function isValidUUID(uuid) {
       const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
       return uuidRegex.test(uuid);
     }
 
-    async function createUser() {
+    function showSection(role) {
+      document.getElementById('selectionSection').style.display = 'none';
+      if (role === 'shopkeeper') {
+        document.getElementById('shopkeeperSection').style.display = 'block';
+      } else if (role === 'customer') {
+        document.getElementById('customerSection').style.display = 'block';
+      }
+    }
+
+    // Shopkeeper Create/Login and Actions
+    let shopkeeperId = localStorage.getItem('shopkeeperId') || null;
+    async function shopkeeperCreateOrLogin() {
+      const name = document.getElementById('shopkeeperName').value;
+      const email = document.getElementById('shopkeeperEmail').value;
+      const phone = document.getElementById('shopkeeperPhone').value;
+      const shopkeeperIdInput = document.getElementById('shopkeeperId').value.toLowerCase();
+      if (!name || !email || !phone || !shopkeeperIdInput) {
+        document.getElementById('result').innerText = 'Please fill all fields!';
+        return;
+      }
+      if (!isValidUUID(shopkeeperIdInput)) {
+        document.getElementById('result').innerText = 'Invalid Shopkeeper ID format!';
+        return;
+      }
       const response = await fetch('http://localhost:3000/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'customer1@example.com', role: 'customer', password_hash: 'hashedpass' })
+        body: JSON.stringify({ name, email, phone_number: phone, role: 'shopkeeper', password_hash: 'temp' })
       });
       const data = await response.json();
       if (response.ok) {
-        localStorage.setItem('userId', data.id);
-        console.log('User created:', data);
-        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+        shopkeeperId = data.id;
+        localStorage.setItem('shopkeeperId', shopkeeperId);
+        document.getElementById('shopkeeperLogin').style.display = 'none';
+        document.getElementById('shopkeeperDashboard').style.display = 'flex';
+        document.getElementById('result').innerText = `Created/Logged in as ${name}! Shopkeeper ID: ${shopkeeperId}`;
       } else {
-        console.error('User creation failed:', data);
         document.getElementById('result').innerText = JSON.stringify(data, null, 2);
       }
     }
 
-    async function createCoupon() {
-      const userId = localStorage.getItem('userId');
-      if (!userId || !isValidUUID(userId)) {
-        console.error('Invalid or missing userId:', userId);
-        document.getElementById('result').innerText = 'Error: Invalid user ID. Create a user first!';
+    async function createCoupon(role) {
+      if (role === 'shopkeeper' && !shopkeeperId) {
+        document.getElementById('result').innerText = 'Please log in first!';
         return;
       }
+      const userId = role === 'shopkeeper' ? shopkeeperId : localStorage.getItem('customerId');
       const response = await fetch('http://localhost:3000/api/coupons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: userId.toLowerCase(), // Ensure lowercase to match database
-          shop_id: 'a38b2a46-8487-42ac-85c6-e35e7b62e1e5'.toLowerCase(), // Ensure lowercase
+          user_id: userId.toLowerCase(),
+          shop_id: 'a38b2a46-8487-42ac-85c6-e35e7b62e1e5'.toLowerCase(),
           expires_at: '2025-12-31T23:59:59Z'
         })
       });
       const data = await response.json();
       if (response.ok) {
-        localStorage.setItem('couponId', data.id);
-        console.log('Coupon created:', data);
-        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+        localStorage.setItem(`${role}CouponId`, data.id);
+        document.getElementById('result').innerText = `Coupon created! ID: ${data.id}. ${role === 'shopkeeper' ? 'Generate a share link next.' : 'View your share link.'}`;
       } else {
-        console.error('Coupon creation failed:', data);
         document.getElementById('result').innerText = JSON.stringify(data, null, 2);
       }
     }
 
-    async function redeemCoupon() {
-      const userId = localStorage.getItem('userId');
-      const couponId = localStorage.getItem('couponId');
-      if (!userId || !couponId || !isValidUUID(userId) || !isValidUUID(couponId)) {
-        console.error('Invalid or missing IDs:', { userId, couponId });
-        document.getElementById('result').innerText = 'Error: Invalid user or coupon ID. Create them first!';
+    async function createShareLink(role) {
+      if (role !== 'shopkeeper' || !shopkeeperId) {
+        document.getElementById('result').innerText = 'Only shopkeepers can generate share links or please log in first!';
         return;
       }
-      console.log('Sending redeem request with:', { coupon_id: couponId.toLowerCase(), redeemer_id: userId.toLowerCase(), shopkeeper_id: 'c4815927-d88f-46ac-b3d8-5e4c1beaabcc'.toLowerCase() });
+      const couponId = localStorage.getItem('shopkeeperCouponId');
+      if (!couponId) {
+        document.getElementById('result').innerText = 'Please create a coupon first!';
+        return;
+      }
+      const response = await fetch('http://localhost:3000/api/share-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coupon_id: couponId.toLowerCase() })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        localStorage.setItem('shopkeeperShareLinkId', data.id);
+        document.getElementById('result').innerText = `Share Link Generated! URL: ${data.link_url}. Share this with customers.`;
+      } else {
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      }
+    }
+
+    async function addClicks(role) {
+      if (role !== 'shopkeeper' || !shopkeeperId) {
+        document.getElementById('result').innerText = 'Only shopkeepers can simulate clicks or please log in first!';
+        return;
+      }
+      const shareLinkId = localStorage.getItem('shopkeeperShareLinkId');
+      if (!shareLinkId) {
+        document.getElementById('result').innerText = 'Please generate a share link first!';
+        return;
+      }
+      let results = '';
+      for (let i = 0; i < 3; i++) {
+        const response = await fetch('http://localhost:3000/api/clicks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            share_link_id: shareLinkId.toLowerCase(),
+            clicker_id: '5600a3db-3f20-4f5a-9e3d-c65c9747f988'.toLowerCase(),
+            clicker_ip: '192.168.1.1'
+          })
+        });
+        const data = await response.json();
+        results += `Click ${i + 1}: ${JSON.stringify(data, null, 2)}\n`;
+      }
+      document.getElementById('result').innerText = results;
+    }
+
+    async function viewRedemptions(role) {
+      if (role !== 'shopkeeper' || !shopkeeperId) {
+        document.getElementById('result').innerText = 'Only shopkeepers can view redemptions or please log in first!';
+        return;
+      }
+      const response = await fetch(`http://localhost:3000/api/redeem?shopkeeper_id=${shopkeeperId}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        document.getElementById('result').innerText = `Redemptions for Shopkeeper ${shopkeeperId}:\n${JSON.stringify(data, null, 2)}`;
+      } else {
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      }
+    }
+
+    async function autoRedeem(role) {
+      if (role !== 'shopkeeper' || !shopkeeperId) {
+        document.getElementById('result').innerText = 'Only shopkeepers can redeem or please log in first!';
+        return;
+      }
+      const couponId = localStorage.getItem('shopkeeperCouponId');
+      if (!couponId) {
+        document.getElementById('result').innerText = 'Please create a coupon first!';
+        return;
+      }
       const response = await fetch('http://localhost:3000/api/redeem', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           coupon_id: couponId.toLowerCase(),
-          redeemer_id: userId.toLowerCase(),
-          shopkeeper_id: 'c4815927-d88f-46ac-b3d8-5e4c1beaabcc'.toLowerCase()
+          redeemer_id: '5600a3db-3f20-4f5a-9e3d-c65c9747f988'.toLowerCase(),
+          shopkeeper_id: shopkeeperId.toLowerCase()
         })
       });
       const data = await response.json();
       if (response.ok) {
-        console.log('Redemption created:', data);
-        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+        document.getElementById('result').innerText = `Redemption created: ${JSON.stringify(data, null, 2)}`;
+        viewRedemptions(role); // Refresh redemptions view
       } else {
-        console.error('Redemption failed:', data);
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      }
+    }
+
+    // Customer Create/Login and Actions
+    let customerId = localStorage.getItem('customerId') || null;
+    async function customerCreateOrLogin() {
+      const name = document.getElementById('customerName').value;
+      const email = document.getElementById('customerEmail').value;
+      const phone = document.getElementById('customerPhone').value;
+      const shopkeeperIdInput = document.getElementById('customerShopkeeperId').value.toLowerCase();
+      if (!name || !email || !phone || !shopkeeperIdInput) {
+        document.getElementById('result').innerText = 'Please fill all fields!';
+        return;
+      }
+      if (!isValidUUID(shopkeeperIdInput)) {
+        document.getElementById('result').innerText = 'Invalid Shopkeeper ID format!';
+        return;
+      }
+      const response = await fetch('http://localhost:3000/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, phone_number: phone, role: 'customer', password_hash: 'temp' })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        customerId = data.id;
+        localStorage.setItem('customerId', customerId);
+        document.getElementById('customerLogin').style.display = 'none';
+        document.getElementById('customerDashboard').style.display = 'flex';
+        document.getElementById('result').innerText = `Created/Logged in as ${name}! Customer ID: ${customerId}`;
+      } else {
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      }
+    }
+
+    async function viewShareLink(role) {
+      if (role !== 'customer' || !customerId) {
+        document.getElementById('result').innerText = 'Only customers can view share links or please log in first!';
+        return;
+      }
+      const couponId = localStorage.getItem('customerCouponId');
+      if (!couponId) {
+        document.getElementById('result').innerText = 'Please create a coupon first!';
+        return;
+      }
+      const response = await fetch('http://localhost:3000/api/share-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coupon_id: couponId.toLowerCase(), user_id: customerId })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        document.getElementById('result').innerText = `Share Link Generated! URL: ${data.link_url}. Share this with friends.`;
+      } else {
         document.getElementById('result').innerText = JSON.stringify(data, null, 2);
       }
     }

@@ -11,7 +11,9 @@ generator client {
 model users {
   id            String       @id @default(uuid()) @db.Uuid
   role          String       @default("customer")
+  name          String?      // Optional name for tracking
   email         String       @unique
+  phone_number  String?      // Optional phone number for cashback
   password_hash String
   created_at    DateTime     @default(now())
   coupons       coupons[]    @relation("UserCoupons")
@@ -30,8 +32,6 @@ model shops {
   owner_id  String   @db.Uuid @unique
   created_at DateTime @default(now())
   coupons   coupons[] @relation("ShopCoupons")
-  // Temporarily remove redemptions relation to avoid conflict
-  // redemptions redemptions[] @relation("ShopRedemptions")
 
   @@map("shops")
 }

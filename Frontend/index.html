@@ -14,7 +14,9 @@
     button:hover { background-color: #45a049; }
     #result { margin-top: 20px; padding: 10px; background-color: #fff; border: 1px solid #ccc; border-radius: 5px; text-align: left; word-wrap: break-word; max-width: 90%; margin-left: auto; margin-right: auto; }
     .section { display: none; }
-    @media (max-width: 600px) { input, button { width: 100%; margin: 5px 0; } #result { font-size: 14px; } }
+    .tab-button { margin: 5px; padding: 10px; background-color: #ddd; border: none; cursor: pointer; }
+    .tab-button.active { background-color: #4CAF50; color: white; }
+    @media (max-width: 600px) { input, button, .tab-button { width: 100%; margin: 5px 0; } #result { font-size: 14px; } }
   </style>
 </head>
 <body>
@@ -24,14 +26,27 @@
     <button onclick="showSection('customer')">Customer</button>
   </div>
   
-  <!-- Shopkeeper Login and Dashboard -->
+  <!-- Shopkeeper Interface -->
   <div id="shopkeeperSection" class="section">
-    <div id="shopkeeperLogin" class="login-container">
+    <div class="selection-container">
+      <button class="tab-button active" onclick="showShopkeeperTab('create')">Create Account</button>
+      <button class="tab-button" onclick="showShopkeeperTab('login')">Login</button>
+    </div>
+    <!-- Create Account Tab -->
+    <div id="shopkeeperCreate" class="login-container">
       <input id="shopkeeperName" placeholder="Name" required>
       <input id="shopkeeperEmail" type="email" placeholder="Email" required>
       <input id="shopkeeperId" placeholder="Shopkeeper ID (e.g., c4815927-d88f-46ac-b3d8-5e4c1beaabcc)" required>
       <input id="shopkeeperPhone" placeholder="Phone Number" required>
-      <button onclick="shopkeeperCreateOrLogin()">Create/Login</button>
+      <input id="shopkeeperPassword" type="password" placeholder="Password" required>
+      <button onclick="shopkeeperCreateAccount()">Create Account</button>
+    </div>
+    <!-- Login Tab -->
+    <div id="shopkeeperLogin" class="login-container" style="display: none;">
+      <input id="shopkeeperLoginEmail" type="email" placeholder="Email" required>
+      <input id="shopkeeperLoginId" placeholder="Shopkeeper ID" required>
+      <input id="shopkeeperLoginPassword" type="password" placeholder="Password" required>
+      <button onclick="shopkeeperLogin()">Login</button>
     </div>
     <div id="shopkeeperDashboard" class="button-container" style="display: none;">
       <button onclick="createCoupon('shopkeeper')">Create Coupon</button>
@@ -69,19 +84,29 @@
       document.getElementById('selectionSection').style.display = 'none';
       if (role === 'shopkeeper') {
         document.getElementById('shopkeeperSection').style.display = 'block';
+        showShopkeeperTab('create'); // Default to create tab
       } else if (role === 'customer') {
         document.getElementById('customerSection').style.display = 'block';
       }
     }
 
-    // Shopkeeper Create/Login and Actions
+    function showShopkeeperTab(tab) {
+      const tabs = ['create', 'login'];
+      tabs.forEach(t => {
+        document.getElementById(`shopkeeper${t.charAt(0).toUpperCase() + t.slice(1)}`).style.display = t === tab ? 'block' : 'none';
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.toggle('active', btn.textContent.toLowerCase() === tab));
+      });
+    }
+
+    // Shopkeeper Create Account
     let shopkeeperId = localStorage.getItem('shopkeeperId') || null;
-    async function shopkeeperCreateOrLogin() {
+    async function shopkeeperCreateAccount() {
       const name = document.getElementById('shopkeeperName').value;
       const email = document.getElementById('shopkeeperEmail').value;
       const phone = document.getElementById('shopkeeperPhone').value;
       const shopkeeperIdInput = document.getElementById('shopkeeperId').value.toLowerCase();
-      if (!name || !email || !phone || !shopkeeperIdInput) {
+      const password = document.getElementById('shopkeeperPassword').value;
+      if (!name || !email || !phone || !shopkeeperIdInput || !password) {
         document.getElementById('result').innerText = 'Please fill all fields!';
         return;
       }
@@ -92,7 +117,39 @@
       const response = await fetch('http://localhost:3000/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, phone_number: phone, role: 'shopkeeper', password_hash: 'temp' })
+        body: JSON.stringify({ name, email, phone_number: phone, role: 'shopkeeper', password_hash: password })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        shopkeeperId = data.id;
+        localStorage.setItem('shopkeeperId', shopkeeperId);
+        document.getElementById('shopkeeperCreate').style.display = 'none';
+        document.getElementById('shopkeeperDashboard').style.display = 'flex';
+        document.getElementById('result').innerText = `Account created and logged in as ${name}! Shopkeeper ID: ${shopkeeperId}`;
+      } else if (data.error && data.error.includes('already exists')) {
+        document.getElementById('result').innerText = 'User with this email already exists! Try logging in.';
+      } else {
+        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+      }
+    }
+
+    // Shopkeeper Login
+    async function shopkeeperLogin() {
+      const email = document.getElementById('shopkeeperLoginEmail').value;
+      const shopkeeperIdInput = document.getElementById('shopkeeperLoginId').value.toLowerCase();
+      const password = document.getElementById('shopkeeperLoginPassword').value;
+      if (!email || !shopkeeperIdInput || !password) {
+        document.getElementById('result').innerText = 'Please fill all fields!';
+        return;
+      }
+      if (!isValidUUID(shopkeeperIdInput)) {
+        document.getElementById('result').innerText = 'Invalid Shopkeeper ID format!';
+        return;
+      }
+      const response = await fetch('http://localhost:3000/api/users/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, shopkeeper_id: shopkeeperIdInput, password })
       });
       const data = await response.json();
       if (response.ok) {
@@ -100,9 +157,9 @@
         localStorage.setItem('shopkeeperId', shopkeeperId);
         document.getElementById('shopkeeperLogin').style.display = 'none';
         document.getElementById('shopkeeperDashboard').style.display = 'flex';
-        document.getElementById('result').innerText = `Created/Logged in as ${name}! Shopkeeper ID: ${shopkeeperId}`;
+        document.getElementById('result').innerText = `Logged in as ${data.name}! Shopkeeper ID: ${shopkeeperId}`;
       } else {
-        document.getElementById('result').innerText = JSON.stringify(data, null, 2);
+        document.getElementById('result').innerText = 'Invalid credentials! Please check email, ID, or password.';
       }
     }
 
@@ -112,12 +169,31 @@
         return;
       }
       const userId = role === 'shopkeeper' ? shopkeeperId : localStorage.getItem('customerId');
+      let shopId;
+      if (role === 'shopkeeper') {
+        const shops = await fetch(`http://localhost:3000/api/shops?owner_id=${userId}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        }).then(res => res.json()).catch(err => { console.error('Shop fetch error:', err); return []; });
+        shopId = shops.length > 0 ? shops[0].id : (await fetch('http://localhost:3000/api/shops', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: `Shop_${userId}`, owner_id: userId })
+        }).then(res => res.json()).then(data => data.id).catch(err => { console.error('Shop creation error:', err); return uuidv4(); }));
+      } else {
+        const shopkeeperIdInput = document.getElementById('customerShopkeeperId').value.toLowerCase();
+        const shops = await fetch(`http://localhost:3000/api/shops?owner_id=${shopkeeperIdInput}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        }).then(res => res.json()).catch(err => { console.error('Shop fetch error:', err); return []; });
+        shopId = shops.length > 0 ? shops[0].id : shopkeeperIdInput; // Fallback to input if no shop
+      }
       const response = await fetch('http://localhost:3000/api/coupons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: userId.toLowerCase(),
-          shop_id: 'a38b2a46-8487-42ac-85c6-e35e7b62e1e5'.toLowerCase(),
+          shop_id: shopId.toLowerCase(),
           expires_at: '2025-12-31T23:59:59Z'
         })
       });

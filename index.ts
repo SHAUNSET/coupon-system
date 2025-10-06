@@ -20,6 +20,7 @@ interface ShopRequestBody {
 interface LoginRequestBody {
   email: string;
   shopkeeper_id: string;
+  password: string;
 }
 
 interface CouponRequestBody {
@@ -85,6 +86,7 @@ app.post('/api/shops', async (req: Request<{}, {}, ShopRequestBody>, res: Respon
 app.post('/api/users', async (req: Request<{}, {}, UserRequestBody>, res: Response) => {
   try {
     const { name, email, phone_number, role, password_hash } = req.body;
+    console.log(`Creating user - Raw Request: ${JSON.stringify(req.body)}`); // Debug raw input
     if (!email || !role || !password_hash) {
       return res.status(400).json({ error: 'Missing required fields: email, role, password_hash' });
     }
@@ -95,7 +97,9 @@ app.post('/api/users', async (req: Request<{}, {}, UserRequestBody>, res: Respon
     const user = await prisma.users.create({
       data: { id: uuidv4(), name, email, phone_number, role, password_hash, created_at: new Date() },
     });
-    console.log(`Created user: ${JSON.stringify(user)}`);
+    console.log(`Created user in DB: ${JSON.stringify(user)}`); // Debug saved user
+    const verifiedUser = await prisma.users.findUnique({ where: { email } });
+    console.log(`Verified user from DB: ${JSON.stringify(verifiedUser)}`); // Debug verified data
     res.status(201).json(user);
   } catch (error) {
     console.error('Error creating user:', error);
@@ -106,17 +110,33 @@ app.post('/api/users', async (req: Request<{}, {}, UserRequestBody>, res: Respon
 // Login endpoint for shopkeepers
 app.post('/api/users/login', async (req: Request<{}, {}, LoginRequestBody>, res: Response) => {
   try {
-    const { email, shopkeeper_id } = req.body;
-    if (!email || !shopkeeper_id) {
-      return res.status(400).json({ error: 'Missing required fields: email, shopkeeper_id' });
+    console.log(`Login request received: ${JSON.stringify(req.body)}`); // Debug raw request
+    const { email, shopkeeper_id, password } = req.body;
+    if (!email || !shopkeeper_id || !password) {
+      return res.status(400).json({ error: 'Missing required fields: email, shopkeeper_id, password' });
     }
     if (!isValidUUID(shopkeeper_id)) {
       return res.status(400).json({ error: 'Invalid UUID format for shopkeeper_id' });
     }
     const user = await prisma.users.findUnique({ where: { email } });
-    if (user && user.role === 'shopkeeper' && user.id.toLowerCase() === shopkeeper_id.toLowerCase()) {
-      res.json(user);
+    console.log(`Raw user data from DB: ${JSON.stringify(user)}`); // Debug raw user
+    if (user) {
+      console.log(`User details - ID: ${user.id}, Role: ${user.role}, Password Hash: "${user.password_hash}"`); // Debug details
+      if (user.role === 'shopkeeper' && user.id.toLowerCase() === shopkeeper_id.toLowerCase()) {
+        console.log(`Password check - Stored: "${user.password_hash}", Input: "${password}"`); // Debug comparison
+        if (user.password_hash.trim() === password.trim()) { // Trim to handle hidden spaces
+          console.log(`Login successful for ${email}`);
+          res.json(user);
+        } else {
+          console.log(`Password mismatch - Stored: "${user.password_hash.length}" chars, Input: "${password.length}" chars`);
+          res.status(401).json({ error: 'Invalid credentials or not a shopkeeper!' });
+        }
+      } else {
+        console.log(`No match for ${email} or not a shopkeeper - ID: ${user.id}, Role: ${user.role}`);
+        res.status(401).json({ error: 'Invalid credentials or not a shopkeeper!' });
+      }
     } else {
+      console.log(`No user found for ${email}`);
       res.status(401).json({ error: 'Invalid credentials or not a shopkeeper!' });
     }
   } catch (error) {
